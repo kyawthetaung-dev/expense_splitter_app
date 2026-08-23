@@ -1,0 +1,145 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../data/repositories/participant_repository.dart';
+import '../models/participant.dart';
+import '../providers/group_providers.dart';
+import '../widgets/empty_state.dart';
+
+class ParticipantManagementScreen extends ConsumerWidget {
+  final String groupId;
+  const ParticipantManagementScreen({super.key, required this.groupId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final participants = ref.watch(participantsProvider(groupId));
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Participants')),
+      body: participants.isEmpty
+          ? const EmptyState(
+              icon: Icons.person_add_alt_outlined,
+              title: 'No participants yet',
+              subtitle: 'Add the people splitting expenses in this group.',
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: participants.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final participant = participants[index];
+                return Card(
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      child: Text(
+                        participant.name.isEmpty ? '?' : participant.name[0].toUpperCase(),
+                      ),
+                    ),
+                    title: Text(participant.name),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed: () => _rename(context, ref, participant),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _delete(context, ref, participant),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _add(context, ref),
+        icon: const Icon(Icons.add),
+        label: const Text('Add Participant'),
+      ),
+    );
+  }
+
+  Future<void> _add(BuildContext context, WidgetRef ref) async {
+    final name = await _promptForName(context, title: 'Add participant', hint: 'Name');
+    if (name == null || name.trim().isEmpty) return;
+    await ref.read(groupControllerProvider).addParticipant(groupId, name);
+  }
+
+  Future<void> _rename(BuildContext context, WidgetRef ref, Participant participant) async {
+    final name = await _promptForName(
+      context,
+      title: 'Rename participant',
+      hint: 'Name',
+      initialValue: participant.name,
+    );
+    if (name == null || name.trim().isEmpty) return;
+    await ref.read(groupControllerProvider).renameParticipant(participant, name);
+  }
+
+  Future<void> _delete(BuildContext context, WidgetRef ref, Participant participant) async {
+    final controller = ref.read(groupControllerProvider);
+    try {
+      await controller.removeParticipant(participant.id);
+    } on ParticipantReferencedException {
+      if (!context.mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Remove participant?'),
+          content: Text(
+            '${participant.name} has expense history in this group. Removing them will '
+            'also delete their payments and shares on those expenses, and existing '
+            'expense totals will no longer match their recorded payer amounts. This '
+            'cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Remove anyway'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true) {
+        await controller.removeParticipant(participant.id, force: true);
+      }
+    }
+  }
+}
+
+Future<String?> _promptForName(
+  BuildContext context, {
+  required String title,
+  required String hint,
+  String initialValue = '',
+}) {
+  final controller = TextEditingController(text: initialValue);
+  return showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        decoration: InputDecoration(hintText: hint),
+        onSubmitted: (value) => Navigator.pop(context, value),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, controller.text),
+          child: const Text('Save'),
+        ),
+      ],
+    ),
+  );
+}

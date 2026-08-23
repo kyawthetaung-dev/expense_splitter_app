@@ -15,7 +15,19 @@ class GroupListScreen extends ConsumerWidget {
     final groups = ref.watch(groupsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Expense Splitter')),
+      appBar: AppBar(
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset('assets/logo/logo.png', width: 28, height: 28),
+            ),
+            const SizedBox(width: 10),
+            const Text('Expense Splitter'),
+          ],
+        ),
+      ),
       body: groups.isEmpty
           ? const EmptyState(
               icon: Icons.groups_outlined,

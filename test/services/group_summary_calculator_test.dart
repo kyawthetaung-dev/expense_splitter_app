@@ -28,8 +28,8 @@ void main() {
 
   test('fully settled group reports isFullySettled true and zero outstanding', () {
     const participants = [
-      Participant(id: 'a', groupId: 'g', name: 'A'),
-      Participant(id: 'b', groupId: 'g', name: 'B'),
+      Participant(id: 'a', name: 'A'),
+      Participant(id: 'b', name: 'B'),
     ];
     final balances = calculatePersonBalances(
       participants: participants,

@@ -46,8 +46,8 @@ void main() {
 
     test('participant with no activity at all is settled at zero', () {
       const participants = [
-        Participant(id: 'a', groupId: 'g', name: 'A'),
-        Participant(id: 'b', groupId: 'g', name: 'B'),
+        Participant(id: 'a', name: 'A'),
+        Participant(id: 'b', name: 'B'),
       ];
       final balances = calculatePersonBalances(
         participants: participants,
@@ -63,7 +63,7 @@ void main() {
     });
 
     test('single participant: paid equals share -> settled', () {
-      const participants = [Participant(id: 'solo', groupId: 'g', name: 'Solo')];
+      const participants = [Participant(id: 'solo', name: 'Solo')];
       const payers = [ExpensePayer(id: 'p', expenseId: 'e', participantId: 'solo', paidAmount: 500)];
       const shares = [ExpenseShare(id: 's', expenseId: 'e', participantId: 'solo', shareAmount: 500)];
       final balances = calculatePersonBalances(
@@ -76,8 +76,8 @@ void main() {
 
     test('duplicate participant names are fine — distinguished by id', () {
       const participants = [
-        Participant(id: 'p1', groupId: 'g', name: 'Alex'),
-        Participant(id: 'p2', groupId: 'g', name: 'Alex'),
+        Participant(id: 'p1', name: 'Alex'),
+        Participant(id: 'p2', name: 'Alex'),
       ];
       const shares = [
         ExpenseShare(id: 's1', expenseId: 'e', participantId: 'p1', shareAmount: 100),
@@ -94,10 +94,10 @@ void main() {
 
     test('multiple payers on one expense: 100,000 paid 60,000+40,000, split among 4', () {
       const participants = [
-        Participant(id: 'kta', groupId: 'g', name: 'KTA'),
-        Participant(id: 'uks', groupId: 'g', name: 'UKS'),
-        Participant(id: 'ast', groupId: 'g', name: 'AST'),
-        Participant(id: 'ksdl', groupId: 'g', name: 'KSDL'),
+        Participant(id: 'kta', name: 'KTA'),
+        Participant(id: 'uks', name: 'UKS'),
+        Participant(id: 'ast', name: 'AST'),
+        Participant(id: 'ksdl', name: 'KSDL'),
       ];
       const payers = [
         ExpensePayer(id: 'p1', expenseId: 'e', participantId: 'kta', paidAmount: 60000),

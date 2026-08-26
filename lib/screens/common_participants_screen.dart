@@ -6,13 +6,15 @@ import '../models/participant.dart';
 import '../providers/group_providers.dart';
 import '../widgets/empty_state.dart';
 
-class ParticipantManagementScreen extends ConsumerWidget {
-  final String groupId;
-  const ParticipantManagementScreen({super.key, required this.groupId});
+/// The common/shared participant master list — participants created here
+/// can be selected into any number of groups; they're never duplicated per
+/// group.
+class CommonParticipantsScreen extends ConsumerWidget {
+  const CommonParticipantsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final participants = ref.watch(participantsProvider(groupId));
+    final participants = ref.watch(allParticipantsProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Participants')),
@@ -20,7 +22,7 @@ class ParticipantManagementScreen extends ConsumerWidget {
           ? const EmptyState(
               icon: Icons.person_add_alt_outlined,
               title: 'No participants yet',
-              subtitle: 'Add the people splitting expenses in this group.',
+              subtitle: 'Add the people you split expenses with.',
             )
           : ListView.separated(
               padding: const EdgeInsets.all(16),
@@ -64,7 +66,7 @@ class ParticipantManagementScreen extends ConsumerWidget {
   Future<void> _add(BuildContext context, WidgetRef ref) async {
     final name = await _promptForName(context, title: 'Add participant', hint: 'Name');
     if (name == null || name.trim().isEmpty) return;
-    await ref.read(groupControllerProvider).addParticipant(groupId, name);
+    await ref.read(participantControllerProvider).createParticipant(name);
   }
 
   Future<void> _rename(BuildContext context, WidgetRef ref, Participant participant) async {
@@ -75,13 +77,13 @@ class ParticipantManagementScreen extends ConsumerWidget {
       initialValue: participant.name,
     );
     if (name == null || name.trim().isEmpty) return;
-    await ref.read(groupControllerProvider).renameParticipant(participant, name);
+    await ref.read(participantControllerProvider).renameParticipant(participant, name);
   }
 
   Future<void> _delete(BuildContext context, WidgetRef ref, Participant participant) async {
-    final controller = ref.read(groupControllerProvider);
+    final controller = ref.read(participantControllerProvider);
     try {
-      await controller.removeParticipant(participant.id);
+      await controller.deleteParticipant(participant.id);
     } on ParticipantReferencedException {
       if (!context.mounted) return;
       final confirmed = await showDialog<bool>(
@@ -89,10 +91,10 @@ class ParticipantManagementScreen extends ConsumerWidget {
         builder: (context) => AlertDialog(
           title: const Text('Remove participant?'),
           content: Text(
-            '${participant.name} has expense history in this group. Removing them will '
-            'also delete their payments and shares on those expenses, and existing '
-            'expense totals will no longer match their recorded payer amounts. This '
-            'cannot be undone.',
+            '${participant.name} has expense history in one or more groups. Removing '
+            'them will also delete their payments and shares on those expenses, and '
+            'existing expense totals will no longer match their recorded payer '
+            'amounts. This cannot be undone.',
           ),
           actions: [
             TextButton(
@@ -107,7 +109,7 @@ class ParticipantManagementScreen extends ConsumerWidget {
         ),
       );
       if (confirmed == true) {
-        await controller.removeParticipant(participant.id, force: true);
+        await controller.deleteParticipant(participant.id, force: true);
       }
     }
   }

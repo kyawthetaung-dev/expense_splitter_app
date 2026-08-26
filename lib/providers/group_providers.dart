@@ -19,12 +19,28 @@ final groupProvider = Provider.family<Group?, String>((ref, groupId) {
   return ref.watch(groupRepositoryProvider).getById(groupId);
 });
 
+/// The participants who are members of [groupId] — resolved from the
+/// group's membership links against the common participant list, sorted by
+/// name. Only these participants are available for expense calculations
+/// within this group.
 final participantsProvider = Provider.family<List<Participant>, String>((
   ref,
   groupId,
 ) {
   ref.watch(dataRevisionProvider);
-  final list = ref.watch(participantRepositoryProvider).getByGroup(groupId);
+  final groupRepo = ref.watch(groupRepositoryProvider);
+  final participantRepo = ref.watch(participantRepositoryProvider);
+  final ids = groupRepo.getParticipantIds(groupId);
+  final list = participantRepo.getByIds(ids);
+  return list..sort((a, b) => a.name.compareTo(b.name));
+});
+
+/// Every participant in the common/shared list, regardless of group
+/// membership — used for the common-participant management screen and the
+/// group participant picker.
+final allParticipantsProvider = Provider<List<Participant>>((ref) {
+  ref.watch(dataRevisionProvider);
+  final list = ref.watch(participantRepositoryProvider).getAll();
   return list..sort((a, b) => a.name.compareTo(b.name));
 });
 
@@ -32,7 +48,10 @@ class GroupController {
   GroupController(this.ref);
   final Ref ref;
 
-  Future<Group> createGroup(String name) async {
+  Future<Group> createGroup(
+    String name, {
+    required List<String> participantIds,
+  }) async {
     final now = DateTime.now();
     final group = Group(
       id: _uuid.v4(),
@@ -41,6 +60,10 @@ class GroupController {
       updatedAt: now,
     );
     await ref.read(groupRepositoryProvider).save(group);
+    await ref.read(groupRepositoryProvider).setParticipants(
+      group.id,
+      participantIds,
+    );
     _bump();
     return group;
   }
@@ -57,12 +80,49 @@ class GroupController {
     _bump();
   }
 
-  Future<Participant> addParticipant(String groupId, String name) async {
-    final participant = Participant(
-      id: _uuid.v4(),
-      groupId: groupId,
-      name: name.trim(),
-    );
+  /// Replaces [groupId]'s membership with exactly [participantIds]. Throws
+  /// [GroupParticipantReferencedException] if a participant being removed
+  /// still has payer/share history on an expense in this group — their
+  /// balance data would otherwise be silently orphaned.
+  Future<void> updateGroupParticipants(
+    String groupId,
+    Set<String> participantIds,
+  ) async {
+    final groupRepo = ref.read(groupRepositoryProvider);
+    final current = groupRepo.getParticipantIds(groupId).toSet();
+    final removed = current.difference(participantIds);
+    for (final participantId in removed) {
+      if (groupRepo.isParticipantReferencedInGroup(groupId, participantId)) {
+        throw GroupParticipantReferencedException(
+          'Cannot remove participant $participantId from group $groupId: '
+          'they have expense history in this group.',
+        );
+      }
+    }
+    await groupRepo.setParticipants(groupId, participantIds.toList());
+    _bump();
+  }
+
+  void _bump() => ref.read(dataRevisionProvider.notifier).state++;
+}
+
+final groupControllerProvider = Provider((ref) => GroupController(ref));
+
+class GroupParticipantReferencedException implements Exception {
+  final String message;
+  GroupParticipantReferencedException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+/// CRUD over the common/shared participant list (not scoped to any group).
+class ParticipantController {
+  ParticipantController(this.ref);
+  final Ref ref;
+
+  Future<Participant> createParticipant(String name) async {
+    final participant = Participant(id: _uuid.v4(), name: name.trim());
     await ref.read(participantRepositoryProvider).save(participant);
     _bump();
     return participant;
@@ -77,7 +137,7 @@ class GroupController {
 
   /// Throws [ParticipantReferencedException] if the participant has expense
   /// history and [force] is false.
-  Future<void> removeParticipant(String participantId, {bool force = false}) async {
+  Future<void> deleteParticipant(String participantId, {bool force = false}) async {
     final repo = ref.read(participantRepositoryProvider);
     if (force) {
       await repo.forceDelete(participantId);
@@ -90,4 +150,4 @@ class GroupController {
   void _bump() => ref.read(dataRevisionProvider.notifier).state++;
 }
 
-final groupControllerProvider = Provider((ref) => GroupController(ref));
+final participantControllerProvider = Provider((ref) => ParticipantController(ref));

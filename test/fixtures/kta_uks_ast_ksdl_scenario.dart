@@ -22,10 +22,10 @@ class KtaUksAstKsdlScenario {
   );
 
   static const participants = [
-    Participant(id: kta, groupId: 'g1', name: 'KTA'),
-    Participant(id: uks, groupId: 'g1', name: 'UKS'),
-    Participant(id: ast, groupId: 'g1', name: 'AST'),
-    Participant(id: ksdl, groupId: 'g1', name: 'KSDL'),
+    Participant(id: kta, name: 'KTA'),
+    Participant(id: uks, name: 'UKS'),
+    Participant(id: ast, name: 'AST'),
+    Participant(id: ksdl, name: 'KSDL'),
   ];
 
   static final swimmingPool = Expense(

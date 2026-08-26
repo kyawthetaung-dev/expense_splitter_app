@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:expense_splitter_app/app.dart';
 import 'package:expense_splitter_app/data/hive/hive_boxes.dart';
 import 'package:expense_splitter_app/models/group.dart';
+import 'package:expense_splitter_app/models/group_participant.dart';
 import 'package:expense_splitter_app/models/participant.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -51,7 +52,11 @@ void main() {
     );
     await HiveBoxes.participantsBox.put(
       'p1',
-      const Participant(id: 'p1', groupId: 'g1', name: 'KTA'),
+      const Participant(id: 'p1', name: 'KTA'),
+    );
+    await HiveBoxes.groupParticipantsBox.put(
+      'gp1',
+      const GroupParticipant(id: 'gp1', groupId: 'g1', participantId: 'p1'),
     );
 
     await tester.pumpWidget(

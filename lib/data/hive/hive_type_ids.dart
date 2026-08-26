@@ -11,4 +11,5 @@ class HiveTypeIds {
   static const settlement = 5;
   static const splitType = 6;
   static const settlementStatus = 7;
+  static const groupParticipant = 8;
 }

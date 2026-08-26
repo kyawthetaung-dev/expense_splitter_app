@@ -111,6 +111,11 @@ class ExpenseController {
     _bump();
   }
 
+  Future<void> clearAllExpenses(String groupId) async {
+    await ref.read(expenseRepositoryProvider).deleteAllForGroup(groupId);
+    _bump();
+  }
+
   void _bump() => ref.read(dataRevisionProvider.notifier).state++;
 }
 

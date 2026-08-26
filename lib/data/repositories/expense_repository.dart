@@ -4,11 +4,16 @@ import '../../models/expense_share.dart';
 import '../hive/hive_boxes.dart';
 
 class ExpenseRepository {
-  List<Expense> getByGroup(String groupId) => HiveBoxes.expensesBox.values
-      .where((e) => e.groupId == groupId)
-      .toList();
+  List<Expense> getAll() => HiveBoxes.expensesBox.values.toList();
+
+  List<Expense> getByGroup(String groupId) =>
+      HiveBoxes.expensesBox.values.where((e) => e.groupId == groupId).toList();
 
   Expense? getById(String id) => HiveBoxes.expensesBox.get(id);
+
+  List<ExpensePayer> getAllPayers() => HiveBoxes.expensePayersBox.values.toList();
+
+  List<ExpenseShare> getAllShares() => HiveBoxes.expenseSharesBox.values.toList();
 
   List<ExpensePayer> getPayers(String expenseId) => HiveBoxes
       .expensePayersBox
@@ -79,6 +84,13 @@ class ExpenseRepository {
     }
     for (final share in shares) {
       await HiveBoxes.expenseSharesBox.put(share.id, share);
+    }
+  }
+
+  /// Deletes every expense (and cascading payer/share rows) for a group.
+  Future<void> deleteAllForGroup(String groupId) async {
+    for (final id in getByGroup(groupId).map((e) => e.id).toList()) {
+      await delete(id);
     }
   }
 

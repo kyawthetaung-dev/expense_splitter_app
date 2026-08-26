@@ -6,6 +6,7 @@ import 'package:expense_splitter_app/data/repositories/participant_repository.da
 import 'package:expense_splitter_app/models/expense.dart';
 import 'package:expense_splitter_app/models/expense_payer.dart';
 import 'package:expense_splitter_app/models/expense_share.dart';
+import 'package:expense_splitter_app/models/group_participant.dart';
 import 'package:expense_splitter_app/models/participant.dart';
 import 'package:expense_splitter_app/models/split_type.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -31,13 +32,13 @@ void main() {
   });
 
   test('delete removes a participant with no expense history', () async {
-    await repository.save(const Participant(id: 'p1', groupId: 'g1', name: 'A'));
+    await repository.save(const Participant(id: 'p1', name: 'A'));
     await repository.delete('p1');
     expect(repository.getById('p1'), isNull);
   });
 
   test('delete throws when the participant has payer/share history', () async {
-    await repository.save(const Participant(id: 'p1', groupId: 'g1', name: 'A'));
+    await repository.save(const Participant(id: 'p1', name: 'A'));
     await expenseRepository.save(
       Expense(
         id: 'e1',
@@ -61,7 +62,7 @@ void main() {
   });
 
   test('forceDelete removes the participant and their payer/share rows', () async {
-    await repository.save(const Participant(id: 'p1', groupId: 'g1', name: 'A'));
+    await repository.save(const Participant(id: 'p1', name: 'A'));
     await expenseRepository.save(
       Expense(
         id: 'e1',
@@ -88,11 +89,49 @@ void main() {
   });
 
   test('duplicate names are allowed — distinguished by id', () async {
-    await repository.save(const Participant(id: 'p1', groupId: 'g1', name: 'Alex'));
-    await repository.save(const Participant(id: 'p2', groupId: 'g1', name: 'Alex'));
+    await repository.save(const Participant(id: 'p1', name: 'Alex'));
+    await repository.save(const Participant(id: 'p2', name: 'Alex'));
 
-    final all = repository.getByGroup('g1');
+    final all = repository.getAll();
     expect(all, hasLength(2));
     expect(all.map((p) => p.name), everyElement('Alex'));
+  });
+
+  test('getByIds returns only the requested participants', () async {
+    await repository.save(const Participant(id: 'p1', name: 'A'));
+    await repository.save(const Participant(id: 'p2', name: 'B'));
+    await repository.save(const Participant(id: 'p3', name: 'C'));
+
+    final result = repository.getByIds(['p1', 'p3']);
+    expect(result.map((p) => p.id).toSet(), {'p1', 'p3'});
+  });
+
+  test('delete cascades to the participant\'s group membership links', () async {
+    await repository.save(const Participant(id: 'p1', name: 'A'));
+    await HiveBoxes.groupParticipantsBox.put(
+      'gp1',
+      const GroupParticipant(id: 'gp1', groupId: 'g1', participantId: 'p1'),
+    );
+    await HiveBoxes.groupParticipantsBox.put(
+      'gp2',
+      const GroupParticipant(id: 'gp2', groupId: 'g2', participantId: 'p1'),
+    );
+
+    await repository.delete('p1');
+
+    expect(HiveBoxes.groupParticipantsBox.get('gp1'), isNull);
+    expect(HiveBoxes.groupParticipantsBox.get('gp2'), isNull);
+  });
+
+  test('forceDelete cascades to the participant\'s group membership links', () async {
+    await repository.save(const Participant(id: 'p1', name: 'A'));
+    await HiveBoxes.groupParticipantsBox.put(
+      'gp1',
+      const GroupParticipant(id: 'gp1', groupId: 'g1', participantId: 'p1'),
+    );
+
+    await repository.forceDelete('p1');
+
+    expect(HiveBoxes.groupParticipantsBox.get('gp1'), isNull);
   });
 }

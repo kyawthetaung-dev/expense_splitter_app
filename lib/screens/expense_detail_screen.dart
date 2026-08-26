@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:printing/printing.dart';
 
 import '../models/split_type.dart';
 import '../providers/expense_providers.dart';
 import '../providers/group_providers.dart';
+import '../services/pdf/expense_pdf_builder.dart';
 import '../widgets/currency_text.dart';
 import 'expense_form_screen.dart';
 
@@ -25,12 +27,29 @@ class ExpenseDetailScreen extends ConsumerWidget {
     final shares = ref.watch(expenseSharesProvider(expenseId));
     final participants = ref.watch(participantsProvider(expense.groupId));
     final nameById = {for (final p in participants) p.id: p.name};
+    final group = ref.watch(groupProvider(expense.groupId));
     final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Expense'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.print_outlined),
+            tooltip: 'Print',
+            onPressed: group == null
+                ? null
+                : () => Printing.layoutPdf(
+                    onLayout: (format) async => buildExpensePdf(
+                      group: group,
+                      expense: expense,
+                      payers: payers,
+                      shares: shares,
+                      participantNameById: nameById,
+                    ).save(),
+                    name: '${expense.title}.pdf',
+                  ),
+          ),
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             onPressed: () => Navigator.push(

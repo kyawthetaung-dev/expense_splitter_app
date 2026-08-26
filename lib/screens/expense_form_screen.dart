@@ -10,6 +10,7 @@ import '../models/split_type.dart';
 import '../providers/expense_providers.dart';
 import '../providers/group_providers.dart';
 import '../theme/app_theme.dart';
+import '../widgets/calculator_dialog.dart';
 import '../widgets/split_type_selector.dart';
 
 class ExpenseFormScreen extends ConsumerStatefulWidget {
@@ -43,6 +44,11 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     _amountController = TextEditingController(
       text: widget.expense != null ? widget.expense!.totalAmount.toString() : '',
     );
+    // A single listener covers every future write to this controller
+    // (typing, and the calculator dialog's programmatic updates alike) —
+    // more robust than requiring each call site to pair a text-assignment
+    // with its own setState.
+    _amountController.addListener(() => setState(() {}));
     _splitType = widget.expense?.splitType ?? SplitType.equal;
   }
 
@@ -138,9 +144,15 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             const SizedBox(height: 16),
             TextFormField(
               controller: _amountController,
-              decoration: const InputDecoration(labelText: 'Total amount (MMK)'),
+              decoration: InputDecoration(
+                labelText: 'Total amount (MMK)',
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.calculate_outlined),
+                  tooltip: 'Calculator',
+                  onPressed: _openCalculator,
+                ),
+              ),
               keyboardType: TextInputType.number,
-              onChanged: (_) => setState(() {}),
               validator: (value) {
                 final v = int.tryParse((value ?? '').trim());
                 if (v == null) return 'Enter a valid amount';
@@ -246,6 +258,15 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  void _openCalculator() {
+    final current = int.tryParse(_amountController.text.trim()) ?? 0;
+    showCalculatorDialog(
+      context: context,
+      initialValue: current,
+      onChanged: (value) => _amountController.text = value.toString(),
     );
   }
 

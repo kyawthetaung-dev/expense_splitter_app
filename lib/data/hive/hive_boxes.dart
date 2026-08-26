@@ -4,12 +4,14 @@ import '../../models/expense.dart';
 import '../../models/expense_payer.dart';
 import '../../models/expense_share.dart';
 import '../../models/group.dart';
+import '../../models/group_participant.dart';
 import '../../models/participant.dart';
 import '../../models/settlement.dart';
 import 'expense_adapter.dart';
 import 'expense_payer_adapter.dart';
 import 'expense_share_adapter.dart';
 import 'group_adapter.dart';
+import 'group_participant_adapter.dart';
 import 'hive_type_ids.dart';
 import 'participant_adapter.dart';
 import 'settlement_adapter.dart';
@@ -19,6 +21,7 @@ import 'split_type_adapter.dart';
 class HiveBoxes {
   static const groups = 'groups';
   static const participants = 'participants';
+  static const groupParticipants = 'groupParticipants';
   static const expenses = 'expenses';
   static const expensePayers = 'expensePayers';
   static const expenseShares = 'expenseShares';
@@ -35,6 +38,7 @@ class HiveBoxes {
     _registerIfNeeded(HiveTypeIds.settlement, SettlementAdapter());
     _registerIfNeeded(HiveTypeIds.splitType, SplitTypeAdapter());
     _registerIfNeeded(HiveTypeIds.settlementStatus, SettlementStatusAdapter());
+    _registerIfNeeded(HiveTypeIds.groupParticipant, GroupParticipantAdapter());
   }
 
   static void _registerIfNeeded<T>(int typeId, TypeAdapter<T> adapter) {
@@ -47,6 +51,7 @@ class HiveBoxes {
     await Future.wait([
       Hive.openBox<Group>(groups),
       Hive.openBox<Participant>(participants),
+      Hive.openBox<GroupParticipant>(groupParticipants),
       Hive.openBox<Expense>(expenses),
       Hive.openBox<ExpensePayer>(expensePayers),
       Hive.openBox<ExpenseShare>(expenseShares),
@@ -80,6 +85,8 @@ class HiveBoxes {
   static Box<Group> get groupsBox => Hive.box<Group>(groups);
   static Box<Participant> get participantsBox =>
       Hive.box<Participant>(participants);
+  static Box<GroupParticipant> get groupParticipantsBox =>
+      Hive.box<GroupParticipant>(groupParticipants);
   static Box<Expense> get expensesBox => Hive.box<Expense>(expenses);
   static Box<ExpensePayer> get expensePayersBox =>
       Hive.box<ExpensePayer>(expensePayers);

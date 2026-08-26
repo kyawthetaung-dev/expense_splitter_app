@@ -9,7 +9,7 @@ import '../widgets/person_balance_tile.dart';
 import '../widgets/summary_card.dart';
 import 'expense_form_screen.dart';
 import 'expense_history_screen.dart';
-import 'participant_management_screen.dart';
+import 'group_participants_screen.dart';
 import 'settlements_screen.dart';
 
 class GroupDashboardScreen extends ConsumerWidget {
@@ -44,7 +44,7 @@ class GroupDashboardScreen extends ConsumerWidget {
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => ParticipantManagementScreen(groupId: groupId),
+                builder: (_) => GroupParticipantsScreen(groupId: groupId),
               ),
             ),
           ),

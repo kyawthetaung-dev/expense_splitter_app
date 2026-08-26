@@ -3,9 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/calculation_providers.dart';
 import '../providers/group_providers.dart';
-import '../theme/app_theme.dart';
-import '../widgets/currency_text.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/settlement_tile.dart';
 
 class SettlementsScreen extends ConsumerWidget {
   final String groupId;
@@ -16,7 +15,6 @@ class SettlementsScreen extends ConsumerWidget {
     final settlements = ref.watch(settlementsProvider(groupId));
     final participants = ref.watch(participantsProvider(groupId));
     final nameById = {for (final p in participants) p.id: p.name};
-    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settlements')),
@@ -32,50 +30,10 @@ class SettlementsScreen extends ConsumerWidget {
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
                 final s = settlements[index];
-                final from = nameById[s.fromParticipantId] ?? 'Unknown';
-                final to = nameById[s.toParticipantId] ?? 'Unknown';
-                return Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  from,
-                                  style: theme.textTheme.titleMedium,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Icon(
-                                Icons.arrow_forward,
-                                size: 18,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  to,
-                                  style: theme.textTheme.titleMedium,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        CurrencyText(
-                          s.amount,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: payColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                return SettlementTile(
+                  settlement: s,
+                  fromName: nameById[s.fromParticipantId] ?? 'Unknown',
+                  toName: nameById[s.toParticipantId] ?? 'Unknown',
                 );
               },
             ),

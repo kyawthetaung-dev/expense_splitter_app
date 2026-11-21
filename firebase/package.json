@@ -1,0 +1,24 @@
+{
+  "name": "expense-splitter-firebase",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && firebase emulators:exec --only firestore --project demo-expense-splitter \"node --test --test-concurrency=1 lib/__tests__/*.test.js\"",
+    "test:device": "npm run build && firebase emulators:exec --only auth,firestore --project demo-expense-splitter \"node lib/__tests__/device_fixture.js && cd .. && flutter test integration_test/auth_flow_test.dart --no-pub --dart-define=FIREBASE_ENABLED=true --dart-define=USE_FIREBASE_EMULATORS=true -d emulator-5554\"",
+    "test:store": "npm run build && firebase emulators:exec --only auth,firestore --project demo-expense-splitter \"cd .. && flutter test integration_test/firestore_store_test.dart --no-pub --dart-define=FIREBASE_ENABLED=true --dart-define=USE_FIREBASE_EMULATORS=true --dart-define=USE_FIRESTORE_DATA=true -d emulator-5554\"",
+    "seed-admin": "npm run build && node lib/scripts/seed-admin.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "@types/node": "^22.0.0",
+    "firebase": "^13.1.0",
+    "firebase-tools": "^15.34.2",
+    "typescript": "~5.9.0"
+  }
+}

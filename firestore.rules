@@ -1,0 +1,268 @@
+rules_version = '2';
+
+// The project runs on the free Spark plan, so there are no Cloud Functions:
+// the app writes directly and these rules are the only server-side check.
+// Anything they can't express (such as "this person has no vouchers yet") is
+// checked in the app instead; see lib/data/store/firestore_invoice_store.dart.
+service cloud.firestore {
+  match /databases/{db}/documents {
+    // ---- Who is calling ----------------------------------------------------
+
+    function provider() {
+      return request.auth.token.firebase.sign_in_provider;
+    }
+
+    function isUser() {
+      return request.auth != null && provider() == 'google.com';
+    }
+
+    function adminDoc() {
+      return get(/databases/$(db)/documents/admins/$(request.auth.uid)).data;
+    }
+
+    // The claim can only be set with the Admin SDK (firebase/src/scripts), never
+    // from the app. Checking the admin record too means disabling an admin or
+    // rotating their password takes effect straight away.
+    function isAdmin() {
+      return request.auth != null
+        && provider() == 'password'
+        && request.auth.token.role == 'admin'
+        && adminDoc().active == true
+        && request.auth.token.auth_time >= adminDoc().tokensValidAfterSec;
+    }
+
+    function isSignedIn() {
+      return isUser() || isAdmin();
+    }
+
+    // ---- Shared checks -----------------------------------------------------
+
+    function isName(value, maxLength) {
+      return value is string && value.size() > 0 && value.size() <= maxLength;
+    }
+
+    function isAmount(value) {
+      return value is int && value >= 0 && value <= 1000000000000;
+    }
+
+    function changed() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // Rules have no loops, so a voucher's amounts are checked position by
+    // position, up to the 20 people per voucher the app allows. A request may
+    // evaluate at most 1,000 expressions, so this is kept lean: padding with
+    // zeros avoids a bounds check per position, and the sum being a whole
+    // number proves every amount is one (a fraction would make it a float).
+    function addsUpTo(amounts, total) {
+      let p = amounts.values().concat([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+      let sum = p[0] + p[1] + p[2] + p[3] + p[4] + p[5] + p[6] + p[7] + p[8] + p[9]
+        + p[10] + p[11] + p[12] + p[13] + p[14] + p[15] + p[16] + p[17] + p[18] + p[19];
+      return amounts.size() <= 20
+        && p[0] >= 0 && p[1] >= 0 && p[2] >= 0 && p[3] >= 0 && p[4] >= 0
+        && p[5] >= 0 && p[6] >= 0 && p[7] >= 0 && p[8] >= 0 && p[9] >= 0
+        && p[10] >= 0 && p[11] >= 0 && p[12] >= 0 && p[13] >= 0 && p[14] >= 0
+        && p[15] >= 0 && p[16] >= 0 && p[17] >= 0 && p[18] >= 0 && p[19] >= 0
+        && sum is int
+        && sum == total;
+    }
+
+    // ---- Profiles ----------------------------------------------------------
+
+    match /users/{uid} {
+      allow get: if isAdmin() || (isUser() && request.auth.uid == uid);
+      allow list: if isAdmin();
+      // Written by the app at sign-in, but only ever as the caller, with the
+      // email from their verified token and the plain user role.
+      allow create, update: if isUser()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(
+          ['emailLower', 'displayName', 'photoUrl', 'role', 'createdAt', 'lastLoginAt'])
+        && request.resource.data.role == 'user'
+        && request.resource.data.emailLower == request.auth.token.email.lower()
+        && isName(request.resource.data.displayName, 200);
+      allow delete: if false;
+
+      match /contacts/{contactId} {
+        allow read, delete: if isSignedIn() && request.auth.uid == uid;
+        allow create, update: if isSignedIn()
+          && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['name', 'kind', 'linkedUid'])
+          && isName(request.resource.data.name, 100)
+          && request.resource.data.kind in ['guest', 'user']
+          && (request.resource.data.linkedUid == null || request.resource.data.linkedUid is string);
+      }
+    }
+
+    // Exact-email lookup for assigning people: a document can be fetched by
+    // its id (the address), but the collection can't be listed.
+    match /userLookup/{emailLower} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create, update: if isUser()
+        && emailLower == request.auth.token.email.lower()
+        && request.resource.data.keys().hasOnly(['uid', 'displayName'])
+        && request.resource.data.uid == request.auth.uid
+        && isName(request.resource.data.displayName, 200);
+      allow delete: if isUser() && resource.data.uid == request.auth.uid;
+    }
+
+    // ---- Invoices ----------------------------------------------------------
+
+    function canAccess(invoice) {
+      return isAdmin() || (isUser() && request.auth.uid in invoice.assignedUids);
+    }
+
+    function invoiceAt(invoiceId) {
+      return get(/databases/$(db)/documents/invoices/$(invoiceId)).data;
+    }
+
+    function isManager(invoice) {
+      return isAdmin() || invoice.createdBy == request.auth.uid;
+    }
+
+    function invoiceFieldsValid(data) {
+      return data.keys().hasOnly([
+          'name', 'status', 'assignedUids', 'participants', 'createdBy', 'summary',
+          'completedBy', 'completedAt', 'settlements', 'createdAt', 'updatedAt'])
+        && isName(data.name, 200)
+        && data.assignedUids is list && data.assignedUids.size() <= 101
+        && data.createdBy in data.assignedUids
+        && data.participants is map && data.participants.size() <= 100
+        && data.summary is map;
+    }
+
+    function isNewOpenInvoice(data) {
+      return invoiceFieldsValid(data)
+        && data.createdBy == request.auth.uid
+        && data.status == 'open'
+        && data.completedBy == null
+        && data.completedAt == null
+        && data.settlements == []
+        && data.createdAt is timestamp && data.createdAt <= request.time
+        && data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // An ordinary change by anyone on the invoice. Only the creator or an
+    // admin may take someone else off it; anyone may take themselves off.
+    function isMemberEdit() {
+      let removedUids = resource.data.assignedUids.toSet()
+        .difference(request.resource.data.assignedUids.toSet());
+      let removedPeople = request.resource.data.participants
+        .diff(resource.data.participants).removedKeys();
+      return !changed().hasAny(
+          ['createdBy', 'status', 'completedBy', 'completedAt', 'settlements', 'createdAt'])
+        && invoiceFieldsValid(request.resource.data)
+        && request.resource.data.updatedAt == request.time
+        && (isManager(resource.data)
+          || (removedUids.hasOnly([request.auth.uid])
+            && removedPeople.hasOnly([request.auth.uid])));
+    }
+
+    // Admin only, recorded with who and when, and only together with its
+    // audit entry: the batch that completes the invoice must also create
+    // statusEvents/completed.
+    function isCompletion(invoiceId) {
+      return isAdmin()
+        && changed().hasOnly(['status', 'completedBy', 'completedAt', 'settlements', 'updatedAt'])
+        && request.resource.data.status == 'completed'
+        && request.resource.data.completedBy == request.auth.uid
+        && request.resource.data.completedAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.settlements is list
+        && existsAfter(/databases/$(db)/documents/invoices/$(invoiceId)/statusEvents/completed);
+    }
+
+    match /invoices/{invoiceId} {
+      // Reading an id that doesn't exist yet is allowed, so a retried create
+      // can check first. Ids are random, so this reveals nothing useful.
+      allow get: if isSignedIn() && (resource == null || canAccess(resource.data));
+      allow list: if canAccess(resource.data);
+      allow create: if isSignedIn() && isNewOpenInvoice(request.resource.data);
+      allow update: if canAccess(resource.data)
+        && resource.data.status == 'open'
+        && (isMemberEdit() || isCompletion(invoiceId));
+      allow delete: if isSignedIn()
+        && isManager(resource.data)
+        && resource.data.status == 'open';
+
+      match /statusEvents/{eventId} {
+        allow read: if canAccess(invoiceAt(invoiceId));
+        allow create: if isAdmin()
+          && eventId == 'completed'
+          && invoiceAt(invoiceId).status == 'open'
+          && getAfter(/databases/$(db)/documents/invoices/$(invoiceId)).data.status == 'completed'
+          && request.resource.data.keys().hasOnly(['from', 'to', 'byUid', 'at'])
+          && request.resource.data.from == 'open'
+          && request.resource.data.to == 'completed'
+          && request.resource.data.byUid == request.auth.uid
+          && request.resource.data.at == request.time;
+        allow update, delete: if false;
+      }
+
+      // ---- Vouchers, with their payers and shares --------------------------
+
+      // Everyone on a voucher must be on the invoice, and payers and shares
+      // must each add up to the total. Old data imported from a device can be
+      // inconsistent; it's kept, marked for review, and fixed by editing.
+      function voucherValid(data, invoice) {
+        return data.keys().hasOnly([
+            'title', 'totalAmount', 'splitType', 'percentages', 'payers', 'shares',
+            'integrity', 'revision', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt'])
+          && isName(data.title, 200)
+          && isAmount(data.totalAmount)
+          && data.splitType in ['equal', 'custom', 'percentage']
+          && (data.percentages == null || data.percentages is map)
+          && data.payers is map && data.shares is map
+          && data.shares.size() > 0
+          && invoice.participants.keys().hasAll(data.payers.keys())
+          && invoice.participants.keys().hasAll(data.shares.keys())
+          && data.revision is int
+          && data.updatedBy == request.auth.uid
+          && (data.integrity == 'needs_review'
+            || (data.integrity == 'ok'
+              && addsUpTo(data.payers, data.totalAmount)
+              && addsUpTo(data.shares, data.totalAmount)));
+      }
+
+      // Each takes the invoice once, so it's looked up and checked once.
+      function canWriteVouchers(invoice) {
+        return canAccess(invoice) && invoice.status == 'open';
+      }
+
+      function isVoucherCreate(invoice, data) {
+        return canWriteVouchers(invoice)
+          && data.revision == 1
+          && data.createdBy == request.auth.uid
+          && data.createdAt is timestamp && data.createdAt <= request.time
+          && data.updatedAt is timestamp && data.updatedAt <= request.time
+          && voucherValid(data, invoice);
+      }
+
+      // Each edit must be based on the latest revision, so a stale edit is
+      // refused instead of overwriting someone else's. An edit always passes
+      // the full amount checks.
+      function isVoucherEdit(invoice, data, existing) {
+        return canWriteVouchers(invoice)
+          && data.integrity == 'ok'
+          && data.revision == existing.revision + 1
+          && data.createdBy == existing.createdBy
+          && data.createdAt == existing.createdAt
+          && data.updatedAt == request.time
+          && voucherValid(data, invoice);
+      }
+
+      match /vouchers/{voucherId} {
+        allow read: if canAccess(invoiceAt(invoiceId));
+        allow create: if isVoucherCreate(invoiceAt(invoiceId), request.resource.data);
+        allow update: if isVoucherEdit(invoiceAt(invoiceId), request.resource.data, resource.data);
+        allow delete: if canWriteVouchers(invoiceAt(invoiceId));
+      }
+    }
+
+    // Everything else, including admins: written only with the Admin SDK.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

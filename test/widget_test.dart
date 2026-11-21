@@ -14,9 +14,9 @@ import 'package:hive_ce/hive_ce.dart';
 // Flutter's AutomatedTestWidgetsFlutterBinding — a known zone/timer
 // interaction, confirmed by isolating it down to a plain `dart:io` write
 // hanging the same way. Writes made in setUp()/tearDown() are unaffected,
-// so tests here seed data in setUp and only read inside the test body. The
-// full create/edit/delete-through-the-UI flow is verified live via
-// `flutter run` instead.
+// so tests here seed data in setUp or inside `tester.runAsync` and only read
+// inside the rest of the test body. The full create/edit/delete-through-the-UI
+// flow is verified live via `flutter run` instead.
 void main() {
   late Directory tempDir;
 
@@ -46,18 +46,20 @@ void main() {
     WidgetTester tester,
   ) async {
     final now = DateTime(2026, 1, 1);
-    await HiveBoxes.groupsBox.put(
-      'g1',
-      Group(id: 'g1', name: 'Weekend Trip', createdAt: now, updatedAt: now),
-    );
-    await HiveBoxes.participantsBox.put(
-      'p1',
-      const Participant(id: 'p1', name: 'KTA'),
-    );
-    await HiveBoxes.groupParticipantsBox.put(
-      'gp1',
-      const GroupParticipant(id: 'gp1', groupId: 'g1', participantId: 'p1'),
-    );
+    await tester.runAsync(() async {
+      await HiveBoxes.groupsBox.put(
+        'g1',
+        Group(id: 'g1', name: 'Weekend Trip', createdAt: now, updatedAt: now),
+      );
+      await HiveBoxes.participantsBox.put(
+        'p1',
+        const Participant(id: 'p1', name: 'KTA'),
+      );
+      await HiveBoxes.groupParticipantsBox.put(
+        'gp1',
+        const GroupParticipant(id: 'gp1', groupId: 'g1', participantId: 'p1'),
+      );
+    });
 
     await tester.pumpWidget(
       const ProviderScope(child: ExpenseSplitterApp()),

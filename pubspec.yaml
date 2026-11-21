@@ -43,9 +43,15 @@ dependencies:
   collection: ^1.19.1
   pdf: ^3.13.0
   printing: ^5.15.0
+  firebase_core: ^5.1.0
+  firebase_auth: ^7.0.1
+  cloud_firestore: ^7.1.0
+  google_sign_in: ^7.2.0
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
     sdk: flutter
 
   # The "flutter_lints" package below contains a set of recommended lints to

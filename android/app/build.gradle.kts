@@ -4,6 +4,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Only applied once a Firebase project's config file has been added, so the app
+// keeps building without one (and with emulators, which don't need it).
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "com.example.expense_splitter_app"
     compileSdk = flutter.compileSdkVersion

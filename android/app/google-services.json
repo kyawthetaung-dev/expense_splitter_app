@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "416153705461",
+    "project_id": "expense-splitter-f931a",
+    "storage_bucket": "expense-splitter-f931a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:416153705461:android:d40126975735e604a79ebc",
+        "android_client_info": {
+          "package_name": "com.example.expense_splitter_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "416153705461-01bj105vdadvtnst3gd75i7hdmk0r3tk.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.expense_splitter_app",
+            "certificate_hash": "a2cd2b920b9220c4c94121f20b40ec28a581b606"
+          }
+        },
+        {
+          "client_id": "416153705461-tshsm59at15gdt2bq62sbi89g7cgjc33.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQzdR719giliV3tTCgG4wz4uZxGYpiBsQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "416153705461-tshsm59at15gdt2bq62sbi89g7cgjc33.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

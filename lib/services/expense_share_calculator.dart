@@ -64,6 +64,9 @@ List<ExpenseShareResult> calculateExpenseShares({
         throw ArgumentError('customAmounts is required for SplitType.custom');
       }
       _requireExactKeys(customAmounts.keys.toSet(), uniqueIds, 'customAmounts');
+      if (customAmounts.values.any((amount) => amount < 0)) {
+        throw ArgumentError('customAmounts must not be negative');
+      }
       final sum = customAmounts.values.fold<int>(0, (a, b) => a + b);
       if (sum != totalAmount) {
         throw ArgumentError(
@@ -92,6 +95,29 @@ List<ExpenseShareResult> calculateExpenseShares({
           ),
       ];
   }
+}
+
+/// Best-effort percentages for an expense that has only integer [shares]
+/// (saved before [Expense.percentages] existed): each share rounded to two
+/// decimals, with the rounding drift placed on the largest share (ties go to
+/// the lowest id) so the result sums to exactly 100 and can be re-saved.
+/// Returns an empty map when the shares sum to zero.
+Map<String, double> derivePercentagesFromShares(Map<String, int> shares) {
+  final total = shares.values.fold<int>(0, (a, b) => a + b);
+  if (total <= 0) return {};
+
+  final sortedIds = shares.keys.toList()..sort();
+  final hundredths = {
+    for (final id in sortedIds) id: (shares[id]! * 10000 / total).round(),
+  };
+  var largestId = sortedIds.first;
+  for (final id in sortedIds) {
+    if (shares[id]! > shares[largestId]!) largestId = id;
+  }
+  final drift = 10000 - hundredths.values.fold<int>(0, (a, b) => a + b);
+  hundredths[largestId] = hundredths[largestId]! + drift;
+
+  return {for (final id in sortedIds) id: hundredths[id]! / 100};
 }
 
 void _requireExactKeys(Set<String> keys, Set<String> expected, String name) {

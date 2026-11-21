@@ -35,5 +35,14 @@ void main() {
     test('rejects percentages that do not sum to 100', () {
       expect(() => distributeByPercentage(total: 100, percentages: [50, 40]), throwsArgumentError);
     });
+
+    test('rejects a negative percentage even when the sum is 100', () {
+      expect(() => distributeByPercentage(total: 100, percentages: [150, -50]), throwsArgumentError);
+    });
+
+    test('rejects non-finite percentages rather than crashing on floor()', () {
+      expect(() => distributeByPercentage(total: 100, percentages: [double.nan, 100]), throwsArgumentError);
+      expect(() => distributeByPercentage(total: 100, percentages: [double.infinity, 0]), throwsArgumentError);
+    });
   });
 }

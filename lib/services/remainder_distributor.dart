@@ -23,6 +23,11 @@ List<int> distributeByPercentage({
   required List<double> percentages,
   double epsilon = 0.001,
 }) {
+  // Checked first: NaN passes the sum check below, since every comparison
+  // against it is false, and would then crash on `floor()`.
+  if (percentages.any((p) => !p.isFinite || p < 0)) {
+    throw ArgumentError('percentages must be finite and not negative');
+  }
   final sum = percentages.fold<double>(0, (a, b) => a + b);
   if ((sum - 100).abs() > epsilon) {
     throw ArgumentError('percentages must sum to 100, got $sum');

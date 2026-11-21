@@ -1,0 +1,190 @@
+{
+  "_comment": "Hand-verified expected results for the Dart calculators. Edit by working the numbers out by hand, never by pasting calculator output.",
+  "shares": [
+    {
+      "name": "equal, divides evenly (Swimming Pool)",
+      "totalAmount": 30000,
+      "splitType": "equal",
+      "participantIds": ["kta", "uks", "ast"],
+      "expected": { "ast": 10000, "kta": 10000, "uks": 10000 }
+    },
+    {
+      "name": "equal, remainder goes to the first sorted id",
+      "totalAmount": 100000,
+      "splitType": "equal",
+      "participantIds": ["c", "a", "b"],
+      "expected": { "a": 33334, "b": 33333, "c": 33333 }
+    },
+    {
+      "name": "equal, ids sort by code unit so uppercase comes first",
+      "totalAmount": 100,
+      "splitType": "equal",
+      "participantIds": ["a", "C", "B"],
+      "expected": { "B": 34, "C": 33, "a": 33 }
+    },
+    {
+      "name": "equal, zero total",
+      "totalAmount": 0,
+      "splitType": "equal",
+      "participantIds": ["a", "b"],
+      "expected": { "a": 0, "b": 0 }
+    },
+    {
+      "name": "custom, exact amounts",
+      "totalAmount": 100,
+      "splitType": "custom",
+      "participantIds": ["a", "b"],
+      "customAmounts": { "a": 70, "b": 30 },
+      "expected": { "a": 70, "b": 30 }
+    },
+    {
+      "name": "percentage, leftovers round 999.9 and 999.9 up (re-save bug case)",
+      "totalAmount": 3000,
+      "splitType": "percentage",
+      "participantIds": ["a", "b", "c"],
+      "percentages": { "a": 33.33, "b": 33.33, "c": 33.34 },
+      "expected": { "a": 1000, "b": 1000, "c": 1000 }
+    },
+    {
+      "name": "percentage, largest fraction takes the leftover",
+      "totalAmount": 1000,
+      "splitType": "percentage",
+      "participantIds": ["a", "b", "c"],
+      "percentages": { "a": 33.33, "b": 33.33, "c": 33.34 },
+      "expected": { "a": 333, "b": 333, "c": 334 }
+    },
+    {
+      "name": "percentage, tied fractions go to the lower index",
+      "totalAmount": 7,
+      "splitType": "percentage",
+      "participantIds": ["a", "b"],
+      "percentages": { "a": 50, "b": 50 },
+      "expected": { "a": 4, "b": 3 }
+    }
+  ],
+  "sharesRejected": [
+    {
+      "name": "negative total",
+      "totalAmount": -100,
+      "splitType": "equal",
+      "participantIds": ["a"]
+    },
+    {
+      "name": "no participants",
+      "totalAmount": 100,
+      "splitType": "equal",
+      "participantIds": []
+    },
+    {
+      "name": "duplicate participants",
+      "totalAmount": 100,
+      "splitType": "equal",
+      "participantIds": ["a", "a"]
+    },
+    {
+      "name": "custom amounts don't sum to total",
+      "totalAmount": 100,
+      "splitType": "custom",
+      "participantIds": ["a", "b"],
+      "customAmounts": { "a": 70, "b": 20 }
+    },
+    {
+      "name": "negative custom amount that still sums to total",
+      "totalAmount": 1000,
+      "splitType": "custom",
+      "participantIds": ["a", "b"],
+      "customAmounts": { "a": 1500, "b": -500 }
+    },
+    {
+      "name": "custom keys don't match participants",
+      "totalAmount": 100,
+      "splitType": "custom",
+      "participantIds": ["a", "b"],
+      "customAmounts": { "a": 100 }
+    },
+    {
+      "name": "percentages don't sum to 100",
+      "totalAmount": 100,
+      "splitType": "percentage",
+      "participantIds": ["a", "b"],
+      "percentages": { "a": 50, "b": 40 }
+    },
+    {
+      "name": "negative percentage that still sums to 100",
+      "totalAmount": 1000,
+      "splitType": "percentage",
+      "participantIds": ["a", "b"],
+      "percentages": { "a": 150, "b": -50 }
+    }
+  ],
+  "balances": [
+    {
+      "name": "KTA scenario, KSDL paid for an expense they have no share in",
+      "participants": ["kta", "uks", "ast", "ksdl"],
+      "payers": [
+        { "participantId": "ksdl", "amount": 30000 },
+        { "participantId": "kta", "amount": 5000 },
+        { "participantId": "ksdl", "amount": 3500 },
+        { "participantId": "ksdl", "amount": 19600 }
+      ],
+      "shares": [
+        { "participantId": "kta", "amount": 10000 },
+        { "participantId": "uks", "amount": 10000 },
+        { "participantId": "ast", "amount": 10000 },
+        { "participantId": "kta", "amount": 2125 },
+        { "participantId": "uks", "amount": 2125 },
+        { "participantId": "ast", "amount": 2125 },
+        { "participantId": "ksdl", "amount": 2125 },
+        { "participantId": "kta", "amount": 4900 },
+        { "participantId": "uks", "amount": 4900 },
+        { "participantId": "ast", "amount": 4900 },
+        { "participantId": "ksdl", "amount": 4900 }
+      ],
+      "expected": {
+        "kta": { "totalShare": 17025, "totalPaid": 5000, "balance": -12025, "status": "pay" },
+        "uks": { "totalShare": 17025, "totalPaid": 0, "balance": -17025, "status": "pay" },
+        "ast": { "totalShare": 17025, "totalPaid": 0, "balance": -17025, "status": "pay" },
+        "ksdl": { "totalShare": 7025, "totalPaid": 53100, "balance": 46075, "status": "receive" }
+      }
+    },
+    {
+      "name": "participant with no rows is settled",
+      "participants": ["a"],
+      "payers": [],
+      "shares": [],
+      "expected": {
+        "a": { "totalShare": 0, "totalPaid": 0, "balance": 0, "status": "settled" }
+      }
+    }
+  ],
+  "settlements": [
+    {
+      "name": "KTA scenario, tied debtors order by id",
+      "balances": { "kta": -12025, "uks": -17025, "ast": -17025, "ksdl": 46075 },
+      "expected": [
+        { "from": "ast", "to": "ksdl", "amount": 17025 },
+        { "from": "uks", "to": "ksdl", "amount": 17025 },
+        { "from": "kta", "to": "ksdl", "amount": 12025 }
+      ]
+    },
+    {
+      "name": "largest debtor pays largest creditor, then spills over",
+      "balances": { "a": -100, "b": -50, "c": 80, "d": 70 },
+      "expected": [
+        { "from": "a", "to": "c", "amount": 80 },
+        { "from": "a", "to": "d", "amount": 20 },
+        { "from": "b", "to": "d", "amount": 50 }
+      ]
+    },
+    {
+      "name": "inconsistent data stops when one side runs out",
+      "balances": { "a": -100, "c": 60 },
+      "expected": [{ "from": "a", "to": "c", "amount": 60 }]
+    },
+    {
+      "name": "all settled",
+      "balances": { "a": 0, "b": 0 },
+      "expected": []
+    }
+  ]
+}

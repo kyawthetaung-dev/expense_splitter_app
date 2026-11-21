@@ -154,5 +154,53 @@ void main() {
       final total = result.fold<int>(0, (sum, r) => sum + r.shareAmount);
       expect(total, 100);
     });
+
+    test('custom split rejects a negative amount even when the sum matches', () {
+      expect(
+        () => calculateExpenseShares(
+          totalAmount: 1000,
+          splitType: SplitType.custom,
+          participantIds: ['a', 'b'],
+          customAmounts: {'a': 1500, 'b': -500},
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  group('derivePercentagesFromShares', () {
+    test('thirds sum to exactly 100, with drift on the lowest id when tied', () {
+      expect(
+        derivePercentagesFromShares({'a': 1000, 'b': 1000, 'c': 1000}),
+        {'a': 33.34, 'b': 33.33, 'c': 33.33},
+      );
+    });
+
+    test('drift goes to the largest share', () {
+      expect(
+        derivePercentagesFromShares({'a': 1, 'b': 1, 'c': 1, 'd': 3}),
+        {'a': 16.67, 'b': 16.67, 'c': 16.67, 'd': 49.99},
+      );
+    });
+
+    test('whole percentages are unchanged', () {
+      expect(derivePercentagesFromShares({'a': 750, 'b': 250}), {'a': 75.0, 'b': 25.0});
+    });
+
+    test('shares summing to zero derive nothing', () {
+      expect(derivePercentagesFromShares({'a': 0, 'b': 0}), isEmpty);
+      expect(derivePercentagesFromShares({}), isEmpty);
+    });
+
+    test('derived percentages re-save to the same shares (old expenses stay editable)', () {
+      const shares = {'a': 1000, 'b': 1000, 'c': 1000};
+      final result = calculateExpenseShares(
+        totalAmount: 3000,
+        splitType: SplitType.percentage,
+        participantIds: shares.keys.toList(),
+        percentages: derivePercentagesFromShares(shares),
+      );
+      expect({for (final r in result) r.participantId: r.shareAmount}, shares);
+    });
   });
 }

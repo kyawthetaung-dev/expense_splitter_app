@@ -19,6 +19,9 @@ class ExpenseAdapter extends TypeAdapter<Expense> {
       splitType: SplitType.values[fields[4] as int],
       createdAt: DateTime.fromMillisecondsSinceEpoch(fields[5] as int),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(fields[6] as int),
+      percentages: (fields[7] as Map?)?.map(
+        (key, value) => MapEntry(key as String, (value as num).toDouble()),
+      ),
     );
   }
 
@@ -32,6 +35,7 @@ class ExpenseAdapter extends TypeAdapter<Expense> {
       4: obj.splitType.index,
       5: obj.createdAt.millisecondsSinceEpoch,
       6: obj.updatedAt.millisecondsSinceEpoch,
+      7: obj.percentages,
     });
   }
 }

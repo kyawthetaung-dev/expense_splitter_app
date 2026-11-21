@@ -52,6 +52,30 @@ void main() {
     expect(repository.getShares('e1'), hasLength(2));
   });
 
+  test('percentages survive a real read from disk, and stay null when unset', () async {
+    await repository.save(
+      Expense(
+        id: 'pct',
+        groupId: 'g1',
+        title: 'Hotel',
+        totalAmount: 3000,
+        splitType: SplitType.percentage,
+        percentages: const {'p1': 33.33, 'p2': 66.67},
+        createdAt: DateTime(2026, 1, 1),
+        updatedAt: DateTime(2026, 1, 1),
+      ),
+      payers: const [],
+      shares: const [],
+    );
+    await repository.save(buildExpense('plain'), payers: const [], shares: const []);
+
+    // Reopening drops Hive's in-memory copy, so the adapter actually runs.
+    await HiveBoxes.initForTest(tempDir.path);
+
+    expect(repository.getById('pct')!.percentages, {'p1': 33.33, 'p2': 66.67});
+    expect(repository.getById('plain')!.percentages, isNull);
+  });
+
   test('re-saving an expense replaces its payers/shares rather than appending', () async {
     await repository.save(
       buildExpense('e1'),

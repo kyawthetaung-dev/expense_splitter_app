@@ -1,21 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/group.dart';
-import '../providers/calculation_providers.dart';
+import '../data/store/invoice_store.dart';
 import '../providers/group_providers.dart';
+import '../providers/store_providers.dart';
+import '../widgets/data_gate.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/show_failure.dart';
+import '../widgets/sign_out_button.dart';
 import 'common_participants_screen.dart';
 import 'create_group_screen.dart';
 import 'expense_summary_screen.dart';
 import 'group_dashboard_screen.dart';
 
-class GroupListScreen extends ConsumerWidget {
+class GroupListScreen extends ConsumerStatefulWidget {
   const GroupListScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final groups = ref.watch(groupsProvider);
+  ConsumerState<GroupListScreen> createState() => _GroupListScreenState();
+}
+
+class _GroupListScreenState extends ConsumerState<GroupListScreen> {
+  /// Hidden as soon as they're swiped away. The list itself can update after
+  /// the swipe animation ends, and a dismissed card mustn't still be showing.
+  final _dismissed = <String>{};
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = ref.watch(groupListProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -47,21 +59,19 @@ class GroupListScreen extends ConsumerWidget {
               MaterialPageRoute(builder: (_) => const ExpenseSummaryScreen()),
             ),
           ),
+          const SignOutButton(),
         ],
       ),
-      body: groups.isEmpty
-          ? const EmptyState(
-              icon: Icons.groups_outlined,
-              title: 'No groups yet',
-              subtitle:
-                  'Create a group to start splitting expenses with friends.',
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: groups.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
-              itemBuilder: (context, index) => _GroupCard(group: groups[index]),
-            ),
+      body: switch (groups) {
+        AsyncValue(hasValue: true, :final value) => _buildList(
+          value!.where((item) => !_dismissed.contains(item.group.id)).toList(),
+        ),
+        AsyncValue(isLoading: false, :final error?) => LoadFailed(
+          error: error,
+          onRetry: () => ref.invalidate(groupListProvider),
+        ),
+        _ => const Center(child: CircularProgressIndicator()),
+      },
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.push(
           context,
@@ -72,19 +82,42 @@ class GroupListScreen extends ConsumerWidget {
       ),
     );
   }
+
+  Widget _buildList(List<GroupListItem> items) {
+    if (items.isEmpty) {
+      return const EmptyState(
+        icon: Icons.groups_outlined,
+        title: 'No groups yet',
+        subtitle: 'Create a group to start splitting expenses with friends.',
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: items.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, index) => _GroupCard(
+        item: items[index],
+        onDismissed: () =>
+            setState(() => _dismissed.add(items[index].group.id)),
+      ),
+    );
+  }
 }
 
 class _GroupCard extends ConsumerWidget {
-  final Group group;
-  const _GroupCard({required this.group});
+  final GroupListItem item;
+  final VoidCallback onDismissed;
 
-  Future<bool> _confirmDelete(BuildContext context) async {
+  const _GroupCard({required this.item, required this.onDismissed});
+
+  /// Deletes before letting the card go, so a refused delete leaves it in place.
+  Future<bool> _confirmDelete(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete group?'),
         content: Text(
-          '"${group.name}" and all of its expenses will be deleted. This cannot be undone.',
+          '"${item.group.name}" and all of its expenses will be deleted. This cannot be undone.',
         ),
         actions: [
           TextButton(
@@ -98,14 +131,20 @@ class _GroupCard extends ConsumerWidget {
         ],
       ),
     );
-    return confirmed ?? false;
+    if (confirmed != true) return false;
+    try {
+      await ref.read(groupControllerProvider).deleteGroup(item.group.id);
+      return true;
+    } catch (e) {
+      if (context.mounted) showFailure(context, e);
+      return false;
+    }
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final participants = ref.watch(participantsProvider(group.id));
-    final summary = ref.watch(groupSummaryProvider(group.id));
+    final group = item.group;
 
     return Dismissible(
       key: ValueKey(group.id),
@@ -122,9 +161,8 @@ class _GroupCard extends ConsumerWidget {
           color: theme.colorScheme.onErrorContainer,
         ),
       ),
-      confirmDismiss: (_) => _confirmDelete(context),
-      onDismissed: (_) =>
-          ref.read(groupControllerProvider).deleteGroup(group.id),
+      confirmDismiss: (_) => _confirmDelete(context, ref),
+      onDismissed: (_) => onDismissed(),
       child: Card(
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
@@ -154,8 +192,8 @@ class _GroupCard extends ConsumerWidget {
                       Text(group.name, style: theme.textTheme.titleMedium),
                       const SizedBox(height: 2),
                       Text(
-                        '${participants.length} participant${participants.length == 1 ? '' : 's'} · '
-                        '${summary.expenseCount} expense${summary.expenseCount == 1 ? '' : 's'}',
+                        '${item.participantCount} participant${item.participantCount == 1 ? '' : 's'} · '
+                        '${item.expenseCount} expense${item.expenseCount == 1 ? '' : 's'}',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
@@ -169,7 +207,7 @@ class _GroupCard extends ConsumerWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: summary.isFullySettled
+                    color: item.isFullySettled
                         ? theme.colorScheme.surfaceContainerHighest
                         : theme.colorScheme.errorContainer.withValues(
                             alpha: 0.5,
@@ -177,7 +215,7 @@ class _GroupCard extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    summary.isFullySettled ? 'Settled' : 'Pending',
+                    item.isFullySettled ? 'Settled' : 'Pending',
                     style: theme.textTheme.labelSmall,
                   ),
                 ),

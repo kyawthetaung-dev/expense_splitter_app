@@ -3,8 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/expense.dart';
 import '../providers/expense_providers.dart';
+import '../providers/store_providers.dart';
 import '../widgets/currency_text.dart';
+import '../widgets/data_gate.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/show_failure.dart';
 import 'expense_detail_screen.dart';
 import 'expense_form_screen.dart';
 
@@ -37,11 +40,22 @@ class ExpenseHistoryScreen extends ConsumerWidget {
       ),
     );
     if (confirmed != true) return;
-    await ref.read(expenseControllerProvider).clearAllExpenses(groupId);
+    try {
+      await ref.read(expenseControllerProvider).clearAllExpenses(groupId);
+    } catch (e) {
+      if (context.mounted) showFailure(context, e);
+    }
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final gate = gateOn(
+      ref,
+      [invoiceProvider(groupId)],
+      title: 'Expense History',
+    );
+    if (gate != null) return gate;
+
     final expenses = ref.watch(expensesProvider(groupId));
     final theme = Theme.of(context);
 
@@ -116,7 +130,10 @@ class _ExpenseCard extends StatelessWidget {
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => ExpenseDetailScreen(expenseId: expense.id),
+            builder: (_) => ExpenseDetailScreen(
+              groupId: expense.groupId,
+              expenseId: expense.id,
+            ),
           ),
         ),
         child: Padding(

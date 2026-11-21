@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../currency/currency_formatter.dart';
 import '../models/expense.dart';
@@ -9,8 +10,11 @@ import '../models/participant.dart';
 import '../models/split_type.dart';
 import '../providers/expense_providers.dart';
 import '../providers/group_providers.dart';
+import '../providers/store_providers.dart';
+import '../services/expense_share_calculator.dart';
 import '../theme/app_theme.dart';
 import '../widgets/calculator_dialog.dart';
+import '../widgets/data_gate.dart';
 import '../widgets/split_type_selector.dart';
 
 class ExpenseFormScreen extends ConsumerStatefulWidget {
@@ -34,6 +38,11 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   final Map<String, TextEditingController> _payerAmountControllers = {};
   bool _controllersInitialized = false;
   String? _errorText;
+  bool _saving = false;
+
+  /// Kept for the life of the form, so retrying a failed "Add" can't save the
+  /// same expense twice.
+  final String _newExpenseId = const Uuid().v4();
 
   bool get _isEditing => widget.expense != null;
 
@@ -68,20 +77,33 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     super.dispose();
   }
 
+  /// Runs on every build: someone can join the group while the form is open,
+  /// and needs fields too. Only the first run picks the existing selection.
   void _ensureControllers(
     List<Participant> participants,
     List<ExpensePayer> existingPayers,
     List<ExpenseShare> existingShares,
   ) {
-    if (_controllersInitialized) return;
-    _controllersInitialized = true;
-
-    if (widget.expense != null) {
-      _selectedParticipantIds.addAll(existingShares.map((s) => s.participantId));
+    if (!_controllersInitialized) {
+      _controllersInitialized = true;
+      if (widget.expense != null) {
+        _selectedParticipantIds.addAll(
+          existingShares.map((s) => s.participantId),
+        );
+      }
     }
 
-    final total = widget.expense?.totalAmount ?? 0;
-    for (final p in participants) {
+    final missing = participants
+        .where((p) => !_payerAmountControllers.containsKey(p.id))
+        .toList();
+    if (missing.isEmpty) return;
+
+    final percentages =
+        widget.expense?.percentages ??
+        derivePercentagesFromShares({
+          for (final s in existingShares) s.participantId: s.shareAmount,
+        });
+    for (final p in missing) {
       final existingShare = existingShares.where((s) => s.participantId == p.id);
       final shareAmount = existingShare.isEmpty ? null : existingShare.first.shareAmount;
       _customAmountControllers[p.id] = TextEditingController(
@@ -89,7 +111,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             ? shareAmount.toString()
             : '',
       );
-      final pct = (shareAmount != null && total > 0) ? (shareAmount * 100 / total) : null;
+      final pct = percentages[p.id];
       _percentageControllers[p.id] = TextEditingController(
         text: pct != null && _splitType == SplitType.percentage ? _trimPercentage(pct) : '',
       );
@@ -104,17 +126,29 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
 
   String _trimPercentage(double value) {
     if (value == value.roundToDouble()) return value.toStringAsFixed(0);
-    return value.toStringAsFixed(2);
+    // Not rounded: showing 33.333 as 33.33 would stop the set summing to 100.
+    return value.toString();
   }
 
   @override
   Widget build(BuildContext context) {
+    // Prefilling before the group has loaded would latch empty fields.
+    final gate = gateOn(
+      ref,
+      [invoiceProvider(widget.groupId)],
+      title: _isEditing ? 'Edit Expense' : 'Add Expense',
+    );
+    if (gate != null) return gate;
+
     final participants = ref.watch(participantsProvider(widget.groupId));
-    final existingPayers = widget.expense != null
-        ? ref.watch(expensePayersProvider(widget.expense!.id))
+    final ExpenseKey? key = widget.expense == null
+        ? null
+        : (groupId: widget.groupId, expenseId: widget.expense!.id);
+    final existingPayers = key != null
+        ? ref.watch(expensePayersProvider(key))
         : const <ExpensePayer>[];
-    final existingShares = widget.expense != null
-        ? ref.watch(expenseSharesProvider(widget.expense!.id))
+    final existingShares = key != null
+        ? ref.watch(expenseSharesProvider(key))
         : const <ExpenseShare>[];
 
     _ensureControllers(participants, existingPayers, existingShares);
@@ -251,7 +285,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             ],
             const SizedBox(height: 24),
             FilledButton(
-              onPressed: _submit,
+              onPressed: _saving ? null : _submit,
               child: Text(_isEditing ? 'Save Changes' : 'Add Expense'),
             ),
             const SizedBox(height: 24),
@@ -358,7 +392,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     for (final p in participants) {
       final raw = _payerAmountControllers[p.id]?.text.trim() ?? '';
       final amount = raw.isEmpty ? 0 : int.tryParse(raw);
-      if (amount == null) {
+      if (amount == null || amount < 0) {
         setState(() => _errorText = 'Enter a valid paid amount for ${p.name}.');
         return;
       }
@@ -372,7 +406,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       for (final id in _selectedParticipantIds) {
         final raw = _customAmountControllers[id]?.text.trim() ?? '';
         final amount = int.tryParse(raw);
-        if (amount == null) {
+        if (amount == null || amount < 0) {
           setState(() => _errorText = 'Enter a valid custom amount for every selected participant.');
           return;
         }
@@ -383,7 +417,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       for (final id in _selectedParticipantIds) {
         final raw = _percentageControllers[id]?.text.trim() ?? '';
         final pct = double.tryParse(raw);
-        if (pct == null) {
+        if (pct == null || !pct.isFinite || pct < 0) {
           setState(() => _errorText = 'Enter a valid percentage for every selected participant.');
           return;
         }
@@ -391,12 +425,15 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       }
     }
 
+    setState(() => _saving = true);
     try {
       await ref
           .read(expenseControllerProvider)
           .saveExpense(
             groupId: widget.groupId,
             expenseId: widget.expense?.id,
+            newExpenseId: _newExpenseId,
+            expectedRevision: widget.expense?.revision,
             title: _titleController.text,
             totalAmount: totalAmount,
             splitType: _splitType,
@@ -407,7 +444,17 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
           );
       if (mounted) Navigator.pop(context);
     } on ArgumentError catch (e) {
-      setState(() => _errorText = e.message?.toString() ?? e.toString());
+      _failed(e.message?.toString() ?? e.toString());
+    } on StoreException catch (e) {
+      _failed(e.message);
     }
+  }
+
+  void _failed(String message) {
+    if (!mounted) return;
+    setState(() {
+      _saving = false;
+      _errorText = message;
+    });
   }
 }

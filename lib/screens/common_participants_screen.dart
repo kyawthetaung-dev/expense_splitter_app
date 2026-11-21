@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/repositories/participant_repository.dart';
 import '../models/participant.dart';
 import '../providers/group_providers.dart';
+import '../providers/store_providers.dart';
+import '../widgets/data_gate.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/show_failure.dart';
 
 /// The common/shared participant master list — participants created here
 /// can be selected into any number of groups; they're never duplicated per
@@ -14,6 +17,9 @@ class CommonParticipantsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final gate = gateOn(ref, [contactsProvider], title: 'Participants');
+    if (gate != null) return gate;
+
     final participants = ref.watch(allParticipantsProvider);
 
     return Scaffold(
@@ -66,7 +72,11 @@ class CommonParticipantsScreen extends ConsumerWidget {
   Future<void> _add(BuildContext context, WidgetRef ref) async {
     final name = await _promptForName(context, title: 'Add participant', hint: 'Name');
     if (name == null || name.trim().isEmpty) return;
-    await ref.read(participantControllerProvider).createParticipant(name);
+    try {
+      await ref.read(participantControllerProvider).createParticipant(name);
+    } catch (e) {
+      if (context.mounted) showFailure(context, e);
+    }
   }
 
   Future<void> _rename(BuildContext context, WidgetRef ref, Participant participant) async {
@@ -77,7 +87,13 @@ class CommonParticipantsScreen extends ConsumerWidget {
       initialValue: participant.name,
     );
     if (name == null || name.trim().isEmpty) return;
-    await ref.read(participantControllerProvider).renameParticipant(participant, name);
+    try {
+      await ref
+          .read(participantControllerProvider)
+          .renameParticipant(participant, name);
+    } catch (e) {
+      if (context.mounted) showFailure(context, e);
+    }
   }
 
   Future<void> _delete(BuildContext context, WidgetRef ref, Participant participant) async {
@@ -85,6 +101,8 @@ class CommonParticipantsScreen extends ConsumerWidget {
     try {
       await controller.deleteParticipant(participant.id);
     } on ParticipantReferencedException {
+      // Only local storage refuses this way: in Firestore, each group keeps
+      // its own copy of its members, so removing someone here is harmless.
       if (!context.mounted) return;
       final confirmed = await showDialog<bool>(
         context: context,
@@ -108,9 +126,14 @@ class CommonParticipantsScreen extends ConsumerWidget {
           ],
         ),
       );
-      if (confirmed == true) {
+      if (confirmed != true) return;
+      try {
         await controller.deleteParticipant(participant.id, force: true);
+      } catch (e) {
+        if (context.mounted) showFailure(context, e);
       }
+    } catch (e) {
+      if (context.mounted) showFailure(context, e);
     }
   }
 }

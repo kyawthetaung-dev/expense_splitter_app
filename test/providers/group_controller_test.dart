@@ -114,7 +114,7 @@ void main() {
       await expectLater(
         container
             .read(groupControllerProvider)
-            .updateGroupParticipants(group.id, {p2.id}),
+            .updateGroupParticipants(group.id, remove: {p1.id}),
         throwsA(isA<GroupParticipantReferencedException>()),
       );
 
@@ -138,7 +138,7 @@ void main() {
 
     await container
         .read(groupControllerProvider)
-        .updateGroupParticipants(group.id, {p1.id});
+        .updateGroupParticipants(group.id, remove: {p2.id});
 
     final memberIds = container
         .read(groupRepositoryProvider)

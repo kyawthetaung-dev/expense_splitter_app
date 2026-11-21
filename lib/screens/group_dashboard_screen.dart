@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/calculation_providers.dart';
 import '../providers/group_providers.dart';
+import '../providers/store_providers.dart';
 import '../widgets/currency_text.dart';
+import '../widgets/data_gate.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/person_balance_tile.dart';
 import '../widgets/summary_card.dart';
@@ -18,9 +20,12 @@ class GroupDashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final gate = gateOn(ref, [invoiceProvider(groupId)]);
+    if (gate != null) return gate;
+
     final group = ref.watch(groupProvider(groupId));
     if (group == null) {
-      // Group was deleted (e.g. from another screen) — bail out.
+      // Deleted, or no longer shared with this person — bail out.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (Navigator.canPop(context)) Navigator.pop(context);
       });

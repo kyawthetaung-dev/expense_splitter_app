@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:printing/printing.dart';
 
-import '../providers/group_providers.dart';
+import '../providers/store_providers.dart';
 import '../providers/summary_providers.dart';
 import '../services/pdf/summary_pdf_builder.dart';
 import '../widgets/currency_text.dart';
+import '../widgets/data_gate.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/person_balance_tile.dart';
 import '../widgets/settlement_tile.dart';
@@ -19,10 +20,13 @@ class ExpenseSummaryScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final gate = gateOn(ref, [overallProvider], title: 'Expense Summary');
+    if (gate != null) return gate;
+
     final summary = ref.watch(overallSummaryProvider);
     final balances = ref.watch(overallPersonBalancesProvider);
     final settlements = ref.watch(overallSettlementsProvider);
-    final participants = ref.watch(allParticipantsProvider);
+    final participants = ref.watch(overallParticipantsProvider);
     final participantById = {for (final p in participants) p.id: p};
     final theme = Theme.of(context);
     final wide = MediaQuery.sizeOf(context).width >= 700;

@@ -5,17 +5,31 @@ import 'package:printing/printing.dart';
 import '../models/split_type.dart';
 import '../providers/expense_providers.dart';
 import '../providers/group_providers.dart';
+import '../providers/store_providers.dart';
 import '../services/pdf/expense_pdf_builder.dart';
 import '../widgets/currency_text.dart';
+import '../widgets/data_gate.dart';
+import '../widgets/show_failure.dart';
 import 'expense_form_screen.dart';
 
 class ExpenseDetailScreen extends ConsumerWidget {
+  final String groupId;
   final String expenseId;
-  const ExpenseDetailScreen({super.key, required this.expenseId});
+
+  const ExpenseDetailScreen({
+    super.key,
+    required this.groupId,
+    required this.expenseId,
+  });
+
+  ExpenseKey get _key => (groupId: groupId, expenseId: expenseId);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final expense = ref.watch(expenseProvider(expenseId));
+    final gate = gateOn(ref, [invoiceProvider(groupId)], title: 'Expense');
+    if (gate != null) return gate;
+
+    final expense = ref.watch(expenseProvider(_key));
     if (expense == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (Navigator.canPop(context)) Navigator.pop(context);
@@ -23,11 +37,11 @@ class ExpenseDetailScreen extends ConsumerWidget {
       return const Scaffold(body: SizedBox.shrink());
     }
 
-    final payers = ref.watch(expensePayersProvider(expenseId));
-    final shares = ref.watch(expenseSharesProvider(expenseId));
-    final participants = ref.watch(participantsProvider(expense.groupId));
+    final payers = ref.watch(expensePayersProvider(_key));
+    final shares = ref.watch(expenseSharesProvider(_key));
+    final participants = ref.watch(participantsProvider(groupId));
     final nameById = {for (final p in participants) p.id: p.name};
-    final group = ref.watch(groupProvider(expense.groupId));
+    final group = ref.watch(groupProvider(groupId));
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -55,7 +69,8 @@ class ExpenseDetailScreen extends ConsumerWidget {
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => ExpenseFormScreen(groupId: expense.groupId, expense: expense),
+                builder: (_) =>
+                    ExpenseFormScreen(groupId: groupId, expense: expense),
               ),
             ),
           ),
@@ -153,9 +168,17 @@ class ExpenseDetailScreen extends ConsumerWidget {
         ],
       ),
     );
-    if (confirmed == true) {
-      await ref.read(expenseControllerProvider).deleteExpense(expenseId);
-      if (context.mounted) Navigator.pop(context);
+    if (confirmed != true) return;
+    try {
+      await ref.read(expenseControllerProvider).deleteExpense(groupId, expenseId);
+    } catch (e) {
+      if (context.mounted) showFailure(context, e);
+      return;
+    }
+    // The screen also leaves by itself once the expense is gone; this only
+    // pops if that hasn't happened yet.
+    if (context.mounted && ModalRoute.of(context)?.isCurrent == true) {
+      Navigator.pop(context);
     }
   }
 }

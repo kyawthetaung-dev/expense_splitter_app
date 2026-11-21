@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/calculation_providers.dart';
 import '../providers/group_providers.dart';
+import '../providers/store_providers.dart';
+import '../widgets/data_gate.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/settlement_tile.dart';
 
@@ -12,6 +14,9 @@ class SettlementsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final gate = gateOn(ref, [invoiceProvider(groupId)], title: 'Settlements');
+    if (gate != null) return gate;
+
     final settlements = ref.watch(settlementsProvider(groupId));
     final participants = ref.watch(participantsProvider(groupId));
     final nameById = {for (final p in participants) p.id: p.name};

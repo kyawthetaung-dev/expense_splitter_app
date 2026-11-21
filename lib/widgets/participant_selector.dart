@@ -4,25 +4,37 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/participant.dart';
 import '../providers/group_providers.dart';
 import 'empty_state.dart';
+import 'show_failure.dart';
 
-/// Checklist over the common/shared participant list, with an inline
-/// "add new participant" affordance for people who aren't in the common
-/// list yet — used by both group creation and group-membership editing, so
-/// selecting participants for a group never requires leaving the flow to
-/// create them first.
+/// Checklist over this person's participant list, with an inline "add new
+/// participant" affordance for people who aren't in the list yet — used by
+/// both group creation and group-membership editing, so selecting
+/// participants for a group never requires leaving the flow to create them
+/// first. The screen using it must wait for `contactsProvider` first.
 class ParticipantSelector extends ConsumerWidget {
   final Set<String> selectedIds;
   final ValueChanged<Set<String>> onChanged;
+
+  /// Group members to list even when they aren't in this person's own list,
+  /// such as someone another member added, so they can still be seen and
+  /// kept.
+  final List<Participant> alsoShow;
 
   const ParticipantSelector({
     super.key,
     required this.selectedIds,
     required this.onChanged,
+    this.alsoShow = const [],
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final participants = ref.watch(allParticipantsProvider);
+    final contacts = ref.watch(allParticipantsProvider);
+    final contactIds = {for (final p in contacts) p.id};
+    final participants = [
+      ...contacts,
+      ...alsoShow.where((p) => !contactIds.contains(p.id)),
+    ]..sort((a, b) => a.name.compareTo(b.name));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -92,9 +104,13 @@ class ParticipantSelector extends ConsumerWidget {
       ),
     );
     if (name == null || name.trim().isEmpty) return;
-    final Participant created = await ref
-        .read(participantControllerProvider)
-        .createParticipant(name);
-    onChanged({...selectedIds, created.id});
+    try {
+      final Participant created = await ref
+          .read(participantControllerProvider)
+          .createParticipant(name);
+      onChanged({...selectedIds, created.id});
+    } catch (e) {
+      if (context.mounted) showFailure(context, e);
+    }
   }
 }

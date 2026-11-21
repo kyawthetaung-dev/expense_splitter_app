@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
+import '../models/group.dart';
 import '../providers/group_providers.dart';
+import '../providers/store_providers.dart';
+import '../widgets/data_gate.dart';
 import '../widgets/participant_selector.dart';
 import 'group_dashboard_screen.dart';
 
@@ -19,6 +23,10 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
   String? _errorText;
   bool _saving = false;
 
+  /// Kept for the life of the screen, so retrying a failed create can't make
+  /// the group twice.
+  final String _groupId = const Uuid().v4();
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -27,6 +35,9 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final gate = gateOn(ref, [contactsProvider], title: 'New Group');
+    if (gate != null) return gate;
+
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('New Group')),
@@ -89,12 +100,24 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
     }
 
     setState(() => _saving = true);
-    final group = await ref
-        .read(groupControllerProvider)
-        .createGroup(
-          _nameController.text,
-          participantIds: _selectedParticipantIds.toList(),
-        );
+    final Group group;
+    try {
+      group = await ref
+          .read(groupControllerProvider)
+          .createGroup(
+            _nameController.text,
+            participantIds: _selectedParticipantIds.toList(),
+            groupId: _groupId,
+          );
+    } on StoreException catch (e) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _errorText = e.message;
+        });
+      }
+      return;
+    }
     if (!mounted) return;
     Navigator.pushReplacement(
       context,

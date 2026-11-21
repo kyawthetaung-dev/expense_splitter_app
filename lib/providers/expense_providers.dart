@@ -1,54 +1,69 @@
+import 'package:collection/collection.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../data/store/invoice_store.dart';
 import '../models/expense.dart';
 import '../models/expense_payer.dart';
 import '../models/expense_share.dart';
 import '../models/split_type.dart';
 import '../services/expense_share_calculator.dart';
 import '../services/validators/expense_validators.dart';
-import 'repository_providers.dart';
+import 'store_providers.dart';
 
 const _uuid = Uuid();
 
-final expensesProvider = Provider.family<List<Expense>, String>((ref, groupId) {
-  ref.watch(dataRevisionProvider);
-  final list = ref.watch(expenseRepositoryProvider).getByGroup(groupId);
-  return list..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-});
+/// Identifies one expense. The group is needed to find it, since expenses are
+/// loaded a group at a time.
+typedef ExpenseKey = ({String groupId, String expenseId});
 
-final expenseProvider = Provider.family<Expense?, String>((ref, expenseId) {
-  ref.watch(dataRevisionProvider);
-  return ref.watch(expenseRepositoryProvider).getById(expenseId);
-});
+// Like the group providers, these read synchronously, after `gateOn` has
+// waited for the group to load.
 
-final expensePayersProvider = Provider.family<List<ExpensePayer>, String>((
+final expensesProvider = Provider.autoDispose.family<List<Expense>, String>((
   ref,
-  expenseId,
+  groupId,
 ) {
-  ref.watch(dataRevisionProvider);
-  return ref.watch(expenseRepositoryProvider).getPayers(expenseId);
+  final snapshot = ref.watch(invoiceProvider(groupId)).requireValue;
+  return [...?snapshot?.expenses]
+    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 });
 
-final expenseSharesProvider = Provider.family<List<ExpenseShare>, String>((
+final expenseProvider = Provider.autoDispose.family<Expense?, ExpenseKey>((
   ref,
-  expenseId,
+  key,
 ) {
-  ref.watch(dataRevisionProvider);
-  return ref.watch(expenseRepositoryProvider).getShares(expenseId);
+  final snapshot = ref.watch(invoiceProvider(key.groupId)).requireValue;
+  return snapshot?.expenses.firstWhereOrNull((e) => e.id == key.expenseId);
 });
+
+final expensePayersProvider = Provider.autoDispose
+    .family<List<ExpensePayer>, ExpenseKey>((ref, key) {
+      final snapshot = ref.watch(invoiceProvider(key.groupId)).requireValue;
+      return [...?snapshot?.payers.where((p) => p.expenseId == key.expenseId)];
+    });
+
+final expenseSharesProvider = Provider.autoDispose
+    .family<List<ExpenseShare>, ExpenseKey>((ref, key) {
+      final snapshot = ref.watch(invoiceProvider(key.groupId)).requireValue;
+      return [...?snapshot?.shares.where((s) => s.expenseId == key.expenseId)];
+    });
 
 class ExpenseController {
   ExpenseController(this.ref);
   final Ref ref;
 
   /// Creates a new expense (when [expenseId] is null) or fully replaces an
-  /// existing one's payers/shares (when editing) — validates the
-  /// pay/share invariants, computes shares via the pure calculation
-  /// service, then persists everything as one unit.
+  /// existing one's payers/shares. The pay/share invariants are checked here
+  /// first, so a bad split throws [ArgumentError] before anything is sent.
+  ///
+  /// [newExpenseId] lets a retried create reuse its id, so it can't be saved
+  /// twice; [expectedRevision] is the [Expense.revision] being edited.
   Future<void> saveExpense({
     required String groupId,
     String? expenseId,
+    String? newExpenseId,
+    int? expectedRevision,
     required String title,
     required int totalAmount,
     required SplitType splitType,
@@ -59,8 +74,7 @@ class ExpenseController {
   }) async {
     validateExpenseAmount(totalAmount);
     validatePayersSumToTotal(payerAmounts, totalAmount);
-
-    final shareResults = calculateExpenseShares(
+    calculateExpenseShares(
       totalAmount: totalAmount,
       splitType: splitType,
       participantIds: participantIds,
@@ -68,55 +82,30 @@ class ExpenseController {
       percentages: percentages,
     );
 
-    final repo = ref.read(expenseRepositoryProvider);
-    final existing = expenseId != null ? repo.getById(expenseId) : null;
-    final now = DateTime.now();
-    final id = expenseId ?? _uuid.v4();
-
-    final expense = Expense(
-      id: id,
-      groupId: groupId,
-      title: title.trim(),
-      totalAmount: totalAmount,
-      splitType: splitType,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-    );
-
-    final payers = [
-      for (final entry in payerAmounts.entries)
-        ExpensePayer(
-          id: _uuid.v4(),
-          expenseId: id,
-          participantId: entry.key,
-          paidAmount: entry.value,
-        ),
-    ];
-    final shares = [
-      for (final s in shareResults)
-        ExpenseShare(
-          id: _uuid.v4(),
-          expenseId: id,
-          participantId: s.participantId,
-          shareAmount: s.shareAmount,
-        ),
-    ];
-
-    await repo.save(expense, payers: payers, shares: shares);
-    _bump();
+    await ref
+        .read(invoiceStoreProvider)
+        .saveExpense(
+          ExpenseInput(
+            groupId: groupId,
+            expenseId: expenseId ?? newExpenseId ?? _uuid.v4(),
+            isNew: expenseId == null,
+            expectedRevision: expectedRevision,
+            title: title,
+            totalAmount: totalAmount,
+            splitType: splitType,
+            payerAmounts: payerAmounts,
+            participantIds: participantIds,
+            customAmounts: splitType == SplitType.custom ? customAmounts : null,
+            percentages: splitType == SplitType.percentage ? percentages : null,
+          ),
+        );
   }
 
-  Future<void> deleteExpense(String expenseId) async {
-    await ref.read(expenseRepositoryProvider).delete(expenseId);
-    _bump();
-  }
+  Future<void> deleteExpense(String groupId, String expenseId) =>
+      ref.read(invoiceStoreProvider).deleteExpense(groupId, expenseId);
 
-  Future<void> clearAllExpenses(String groupId) async {
-    await ref.read(expenseRepositoryProvider).deleteAllForGroup(groupId);
-    _bump();
-  }
-
-  void _bump() => ref.read(dataRevisionProvider.notifier).state++;
+  Future<void> clearAllExpenses(String groupId) =>
+      ref.read(invoiceStoreProvider).clearExpenses(groupId);
 }
 
 final expenseControllerProvider = Provider((ref) => ExpenseController(ref));

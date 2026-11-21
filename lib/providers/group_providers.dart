@@ -1,153 +1,94 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
-import '../data/repositories/participant_repository.dart';
+import '../data/store/invoice_store.dart';
 import '../models/group.dart';
 import '../models/participant.dart';
-import 'repository_providers.dart';
+import 'store_providers.dart';
+
+export '../data/store/invoice_store.dart'
+    show GroupParticipantReferencedException, StoreException;
 
 const _uuid = Uuid();
 
-final groupsProvider = Provider<List<Group>>((ref) {
-  ref.watch(dataRevisionProvider);
-  final groups = ref.watch(groupRepositoryProvider).getAll();
-  return groups..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-});
+// These read synchronously from the store's streams, so a screen must wait
+// for the stream first (see `gateOn`); reading before it has loaded throws.
 
-final groupProvider = Provider.family<Group?, String>((ref, groupId) {
-  ref.watch(dataRevisionProvider);
-  return ref.watch(groupRepositoryProvider).getById(groupId);
-});
+final groupProvider = Provider.autoDispose.family<Group?, String>(
+  (ref, groupId) => ref.watch(invoiceProvider(groupId)).requireValue?.group,
+);
 
-/// The participants who are members of [groupId] — resolved from the
-/// group's membership links against the common participant list, sorted by
-/// name. Only these participants are available for expense calculations
-/// within this group.
-final participantsProvider = Provider.family<List<Participant>, String>((
-  ref,
-  groupId,
-) {
-  ref.watch(dataRevisionProvider);
-  final groupRepo = ref.watch(groupRepositoryProvider);
-  final participantRepo = ref.watch(participantRepositoryProvider);
-  final ids = groupRepo.getParticipantIds(groupId);
-  final list = participantRepo.getByIds(ids);
-  return list..sort((a, b) => a.name.compareTo(b.name));
-});
+/// The participants who are members of [groupId], sorted by name. Only these
+/// can be on the group's expenses.
+final participantsProvider = Provider.autoDispose
+    .family<List<Participant>, String>((ref, groupId) {
+      final snapshot = ref.watch(invoiceProvider(groupId)).requireValue;
+      return [...?snapshot?.participants]
+        ..sort((a, b) => a.name.compareTo(b.name));
+    });
 
-/// Every participant in the common/shared list, regardless of group
-/// membership — used for the common-participant management screen and the
-/// group participant picker.
-final allParticipantsProvider = Provider<List<Participant>>((ref) {
-  ref.watch(dataRevisionProvider);
-  final list = ref.watch(participantRepositoryProvider).getAll();
-  return list..sort((a, b) => a.name.compareTo(b.name));
+/// This person's whole list of people, regardless of group, sorted by name.
+final allParticipantsProvider = Provider.autoDispose<List<Participant>>((ref) {
+  return [...ref.watch(contactsProvider).requireValue]
+    ..sort((a, b) => a.name.compareTo(b.name));
 });
 
 class GroupController {
   GroupController(this.ref);
   final Ref ref;
 
+  InvoiceStore get _store => ref.read(invoiceStoreProvider);
+
+  /// Pass the same [groupId] when retrying, so a create whose response was
+  /// lost isn't made twice.
   Future<Group> createGroup(
     String name, {
     required List<String> participantIds,
-  }) async {
-    final now = DateTime.now();
-    final group = Group(
-      id: _uuid.v4(),
-      name: name.trim(),
-      createdAt: now,
-      updatedAt: now,
+    String? groupId,
+  }) {
+    return _store.createGroup(
+      groupId: groupId ?? _uuid.v4(),
+      name: name,
+      participantIds: participantIds,
     );
-    await ref.read(groupRepositoryProvider).save(group);
-    await ref.read(groupRepositoryProvider).setParticipants(
-      group.id,
-      participantIds,
-    );
-    _bump();
-    return group;
   }
 
-  Future<void> renameGroup(Group group, String newName) async {
-    await ref
-        .read(groupRepositoryProvider)
-        .save(group.copyWith(name: newName.trim(), updatedAt: DateTime.now()));
-    _bump();
-  }
+  Future<void> renameGroup(String groupId, String newName) =>
+      _store.renameGroup(groupId, newName);
 
-  Future<void> deleteGroup(String groupId) async {
-    await ref.read(groupRepositoryProvider).delete(groupId);
-    _bump();
-  }
+  Future<void> deleteGroup(String groupId) => _store.deleteGroup(groupId);
 
-  /// Replaces [groupId]'s membership with exactly [participantIds]. Throws
-  /// [GroupParticipantReferencedException] if a participant being removed
-  /// still has payer/share history on an expense in this group — their
-  /// balance data would otherwise be silently orphaned.
+  /// Throws [GroupParticipantReferencedException] (or [StoreException]) if
+  /// someone in [remove] still has payer/share history in this group, whose
+  /// balance would otherwise be silently orphaned.
   Future<void> updateGroupParticipants(
-    String groupId,
-    Set<String> participantIds,
-  ) async {
-    final groupRepo = ref.read(groupRepositoryProvider);
-    final current = groupRepo.getParticipantIds(groupId).toSet();
-    final removed = current.difference(participantIds);
-    for (final participantId in removed) {
-      if (groupRepo.isParticipantReferencedInGroup(groupId, participantId)) {
-        throw GroupParticipantReferencedException(
-          'Cannot remove participant $participantId from group $groupId: '
-          'they have expense history in this group.',
-        );
-      }
-    }
-    await groupRepo.setParticipants(groupId, participantIds.toList());
-    _bump();
-  }
-
-  void _bump() => ref.read(dataRevisionProvider.notifier).state++;
+    String groupId, {
+    Set<String> add = const {},
+    Set<String> remove = const {},
+  }) => _store.updateGroupParticipants(groupId, add: add, remove: remove);
 }
 
 final groupControllerProvider = Provider((ref) => GroupController(ref));
 
-class GroupParticipantReferencedException implements Exception {
-  final String message;
-  GroupParticipantReferencedException(this.message);
-
-  @override
-  String toString() => message;
-}
-
-/// CRUD over the common/shared participant list (not scoped to any group).
+/// CRUD over this person's list of people (not scoped to any group).
 class ParticipantController {
   ParticipantController(this.ref);
   final Ref ref;
 
-  Future<Participant> createParticipant(String name) async {
-    final participant = Participant(id: _uuid.v4(), name: name.trim());
-    await ref.read(participantRepositoryProvider).save(participant);
-    _bump();
-    return participant;
-  }
+  InvoiceStore get _store => ref.read(invoiceStoreProvider);
 
-  Future<void> renameParticipant(Participant participant, String newName) async {
-    await ref
-        .read(participantRepositoryProvider)
-        .save(participant.copyWith(name: newName.trim()));
-    _bump();
-  }
+  Future<Participant> createParticipant(String name) =>
+      _store.createContact(name);
 
-  /// Throws [ParticipantReferencedException] if the participant has expense
-  /// history and [force] is false.
-  Future<void> deleteParticipant(String participantId, {bool force = false}) async {
-    final repo = ref.read(participantRepositoryProvider);
-    if (force) {
-      await repo.forceDelete(participantId);
-    } else {
-      await repo.delete(participantId);
-    }
-    _bump();
-  }
+  Future<void> renameParticipant(Participant participant, String newName) =>
+      _store.renameContact(participant, newName);
 
-  void _bump() => ref.read(dataRevisionProvider.notifier).state++;
+  /// On this device, throws `ParticipantReferencedException` if the
+  /// participant has expense history and [force] is false.
+  Future<void> deleteParticipant(String participantId, {bool force = false}) =>
+      _store.deleteContact(participantId, force: force);
 }
 
-final participantControllerProvider = Provider((ref) => ParticipantController(ref));
+final participantControllerProvider = Provider(
+  (ref) => ParticipantController(ref),
+);

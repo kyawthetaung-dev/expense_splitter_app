@@ -1,0 +1,26 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Opens straight into the group list, with data kept on the device.
+      "name": "App (no sign-in)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart"
+    },
+    {
+      // Starts on the login screen, against the local Firebase emulators
+      // (cd firebase, then: npx firebase emulators:start --only auth,firestore --project demo-expense-splitter).
+      // Signing in only works on the Android emulator: a real phone or tablet
+      // can't reach the emulators at 10.0.2.2.
+      "name": "App with sign-in (local emulators)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": [
+        "--dart-define=FIREBASE_ENABLED=true",
+        "--dart-define=USE_FIREBASE_EMULATORS=true"
+      ]
+    }
+  ]
+}
